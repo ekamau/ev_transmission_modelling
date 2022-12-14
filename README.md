@@ -1,2 +1,6 @@
-# enterovirus_transmission_dynamics_UK
-Repository for EV-A71 and CVA6 serology modelling
+# Enterovirus transmission dynamics in England, UK: a modelling study
+<br>
+This repository contains the data and code used to produce the results presented in "Enterovirus A71 and Coxsackievirus A6 transmission dynamics in England, UK, 2006 – 2017: a mathematical modelling study using cross-sectional seroprevalence data"
+
+<br>
+The serology data with information on age, year of sample collection and titer can be found at: ``. The catalytic models used in the analysis can be found at ``.
