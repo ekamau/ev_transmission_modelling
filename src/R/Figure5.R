@@ -1,15 +1,11 @@
 plot_fig5 <- function() {
-  # age foi curves:
-  exponential_age_foi <- function(lambda, beta, age_range) {
-    tibble(age = age_range, foi = lambda * exp(- beta * age_range))
-  }
-  
-  age_foi_curves_subsample <- function(df, age_range, n_iterations = 1000) {
+  age_seropositivity_curves_subsample <- function(
+    df, age_range, sero_function, n_iterations = 1000) {
     for(i in 1:n_iterations) {
       index <- sample(nrow(df), 1)
       df_tmp <- df[index, ]
-      foi_tmp <- exponential_age_foi(df_tmp$lambda[1], df_tmp$beta[1], age_range) %>% 
-        mutate(iteration = i)
+      foi_tmp <- sero_function(
+        df_tmp, age_range) %>% mutate(iteration=i)
       if(i == 1)
         big_df <- foi_tmp
       else
@@ -18,122 +14,187 @@ plot_fig5 <- function() {
     big_df
   }
   
-  summarise_age_curve_uncertainty <- function(filename, age_range, n_iterations = 1000) {
+  summarise_age_curve_uncertainty <- function(filename, age_range, sero_function, n_iterations = 1000) {
     df <- readRDS(filename) %>% as.data.frame()
-    tmp <- age_foi_curves_subsample(df, age_range, n_iterations)
+    tmp <- age_seropositivity_curves_subsample(df, age_range, sero_function, n_iterations)
     tmp %>% group_by(age) %>% 
-      summarise(middle=median(foi),
-                lower=quantile(foi, 0.025),
-                upper=quantile(foi, 0.975))
+      summarise(middle = median(seropositivity),
+                lower = quantile(seropositivity, 0.025),
+                upper = quantile(seropositivity, 0.975))
   }
   
-  age_range <- seq(0, 20, 0.1)
-  cva6 <- summarise_age_curve_uncertainty("results/CVA6/CVA6_model5_lambda_beta.rds",
-                                          age_range, 1000) %>% mutate(virus = "CVA6")
-  eva71 <- summarise_age_curve_uncertainty("results/EVA71/EVA71_model5_lambda_beta.rds", 
-                                           age_range, 1000) %>% mutate(virus = "EV-A71")
-  
-  # constant foi
-  foi <- function(lambda, age_range) {
-    tibble(age = age_range, foi = lambda)
+  both_viruses <- function(filename_cva6, filename_eva71, age_range, sero_function) {
+    cva6 <- summarise_age_curve_uncertainty(filename_cva6, age_range, sero_function, 1000) %>% 
+      mutate(virus = "CVA6")
+    
+    eva71 <- summarise_age_curve_uncertainty(filename_eva71, age_range, sero_function, 1000) %>% 
+      mutate(virus = "EV-A71")
+    
+    both <- cva6 %>% bind_rows(eva71)
+    both
   }
   
-  foi_curves_subsample <- function(df, age_range, n_iterations = 1000) {
-    for(i in 1:n_iterations) {
-      index <- sample(nrow(df), 1)
-      df_tmp <- df[index, ]
-      foi_tmp <- foi(df_tmp$lambda[1], age_range) %>% mutate(iteration = i)
-      if(i == 1)
-        big_df <- foi_tmp
-      else
-        big_df <- big_df %>% bind_rows(foi_tmp)
-    }
-    big_df
+  
+  # model 2 -----
+  z <- function(lambda, rho, age_range){
+    sero <- (lambda / (lambda + rho)) * (1 - exp(- age_range * (lambda + rho))) 
+    tibble(age = age_range, seropositivity = sero)
   }
   
-  foi_uncertainty <- function(filename, age_range, n_iterations = 1000) {
-    df <- readRDS(filename) %>% as.data.frame()
-    tmp <- foi_curves_subsample(df, age_range, n_iterations)
-    tmp %>% group_by(age) %>% 
-      summarise(middle=median(foi),
-                lower=quantile(foi, 0.025),
-                upper=quantile(foi, 0.975))
+  sero_function_seroreversion <- function(df_single, age_range) {
+    z(df_single$lambda[1], df_single$gamma[1], age_range)
   }
   
-  age_range <- seq(0, 20, 0.1)
-  cva6b <- foi_uncertainty("results/CVA6/CVA6_model2_lambda_rho.rds",
-                           age_range, 1000) %>% mutate(virus = "CVA6", model = "M2")
-  eva71b <- foi_uncertainty("results/EVA71/EVA71_model2_lambda_rho.rds",
-                            age_range, 1000) %>% mutate(virus = "EV-A71", model = "M2")
-  both <- cva6 %>% bind_rows(eva71, cva6b, eva71b)
+  age_range <- seq(0, 85, 0.1)
+  df_2 <- both_viruses("results/CVA6/CVA6_model2_lambda_rho.rds",
+                       "results/EVA71/EVA71_model2_lambda_rho.rds",
+                       age_range, sero_function_seroreversion)
   
-  g1 <- ggplot() +
-    geom_ribbon(data = both[which(both$model == 'M5'), ], 
-                aes(x = age, ymin = lower, ymax = upper, fill = virus), alpha = 0.5) +
-    geom_line(data = both[which(both$model == 'M5'), ], aes(x = age, y = middle, colour = virus)) +
-    geom_ribbon(data = both[which(both$model == 'M2'), ], 
-                aes(x = age, ymin = lower, ymax = upper, fill = virus), alpha = 0.5) +
-    geom_line(data = both[which(both$model == 'M2'), ], aes(x = age, y = middle, colour = virus)) +
-    scale_colour_manual(values = c("#D95F02", "#1B9E77")) +
-    scale_fill_manual(values = c("#D95F02", "#1B9E77")) +
-    ylim(0, 0.7) +
-    #scale_color_brewer("Serotype", palette = "Dark2") + 
-    #scale_fill_brewer("Serotype", palette = "Dark2") + 
-    labs(x = "Age, years", y = "FOI", title = "(A)") +
+  # model 5 -----
+  z1 <- function(lambda, beta, age_range){
+    sero <- 1 - exp(-lambda / beta * (1 - exp(-age_range * beta))) 
+    tibble(age = age_range, seropositivity = sero)
+  }
+  
+  sero_function_age <- function(df_single, age_range) {
+    z1(df_single$lambda[1], df_single$beta[1], age_range)
+  }
+  
+  df_5 <- both_viruses("results/CVA6/CVA6_model5_lambda_beta.rds",
+                       "results/EVA71/EVA71_model5_lambda_beta.rds",
+                       age_range, sero_function_age)
+  
+  # combine and plot versus real data ----
+  df_both <- df_2 %>% mutate(model = "Age-constant FOI & Seroreversion") %>% 
+    bind_rows(df_5 %>% mutate(model = "Age-dependent FOI & no seroreversion")) %>% 
+    mutate(type = "simulated")
+  
+  process_data <- function(filename, age_bins) {
+    read.csv(filename, header = TRUE, sep = ",") %>%
+      rename_all(tolower) %>% filter(age >= 1) %>% 
+      mutate(age_bin = cut(age, age_bins, include.lowest = TRUE)) %>% 
+      mutate(serostatus = case_when(final_titer >= 8 ~ 'Positive', 
+                                    final_titer < 8 ~ 'Negative')) %>% 
+      rename(year=year_collection) %>% group_by(year, age_bin) %>% 
+      summarise(n = n(), n_positive = sum(serostatus == "Positive"), age = mean(age)) %>% 
+      mutate(first = 1 + n_positive, second = 1 + n - n_positive) %>% 
+      mutate(middle = qbeta(0.5, first, second),
+             lower = qbeta(0.05, first, second),
+             upper = qbeta(0.975, first, second)) %>% 
+      mutate(type = "real")
+  }
+  
+  age_bins <- c(1, 4, 9, 19, 29, 39, 49, 59, 69, 79, 109)
+  df_cva6 <- process_data("data/titers_CVA6.csv", age_bins) %>% mutate(virus = "CVA6")
+  df_eva71 <- process_data("data/titers_EVA71.csv", age_bins) %>% mutate(virus = "EV-A71")
+  df_real <- df_cva6 %>% bind_rows(df_eva71)
+  
+  ggplot(df_both, aes(x = age, y = middle)) +
+    geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.5) +
+    geom_line() +
+    geom_pointrange(data = df_real, aes(ymin = lower, ymax = upper, colour = as.factor(year))) +
+    scale_color_brewer("Year", palette = "Dark2") +
+    labs(x = "Age, years", y = "Seropositivity") +
+    scale_y_continuous(labels = scales::percent) +
     theme_bw() +
-    theme(axis.text = element_text(size = 9),
-          plot.title = element_text(face = 'bold', size = 14),
-          axis.title = element_text(size = 11),
-          legend.position = "none")
+    theme(axis.title = element_text(size = 11),
+          axis.text = element_text(size = 9),
+          panel.grid = element_blank(),
+          plot.title = element_text(size = 14, face = "bold"),
+          strip.text = element_text(size = 11),
+          legend.position = "bottom") +
+    facet_grid(vars(virus), vars(model))
   
-  # probability of detectable antibody curves ----
-  prob_detection <- function(rho, time_range) {
-    tibble(time = time_range, prob_detection = exp(- rho * time_range))
-  }
+  # Add binomial sampling noise -----
   
-  antibody_detection_curves_subsample <- function(df, time_range, n_iterations = 1000) {
-    for(i in 1:n_iterations) {
-      index <- sample(nrow(df), 1)
-      rho <- df[index, ]
-      antibody_tmp <- prob_detection(rho, time_range) %>% mutate(iteration = i)
-      if(i == 1)
-        big_df <- antibody_tmp
-      else
-        big_df <- big_df %>% bind_rows(antibody_tmp)
-    }
-    big_df
-  }
-  
-  summarise_antibody_curve_uncertainty <- function(filename, time_range, n_iterations = 1000) {
+  summarise_age_curve_uncertainty_all <- function(
+    filename, age_range, sero_function, n_mcmc_iterations, n_rbinom_iterations, sample_size) {
+    
     df <- readRDS(filename) %>% as.data.frame()
-    tmp <- antibody_detection_curves_subsample(df, time_range, n_iterations)
-    tmp %>% group_by(time) %>% 
-      summarise(middle = median(prob_detection),
-                lower = quantile(prob_detection, 0.025),
-                upper = quantile(prob_detection, 0.975))
+    tmp <- age_seropositivity_curves_subsample(df, age_range, sero_function, n_mcmc_iterations)
+    n_iterations <- n_distinct(tmp$iteration)
+    for(i in 1:n_iterations) {
+      df_short <- tmp %>% filter(iteration == i)
+      n_age <- length(df_short$age)
+      lowers <- vector(length = n_age)
+      mids <- vector(length = n_age)
+      uppers <- vector(length = n_age)
+      for(j in seq_along(df_short$age)) {
+        x_rvs <- rbinom(n_rbinom_iterations, sample_size, df_short$seropositivity[j])
+        x_rvs <- x_rvs / sample_size
+        lower <- quantile(x_rvs, 0.025)
+        middle <- quantile(x_rvs, 0.5)
+        upper <- quantile(x_rvs, 0.975)
+        lowers[j] <- lower
+        mids[j] <- middle
+        uppers[j] <- upper
+      }
+      df_short <- df_short %>% mutate(lower = lowers, middle = mids, upper = uppers)
+      if(i == 1)
+        big_df <- df_short
+      else
+        big_df <- big_df %>% bind_rows(df_short)
+    }
+    
+    big_df %>% group_by(age) %>% 
+      summarise(middle = mean(middle), lower = mean(lower), upper = mean(upper))
   }
   
-  time_range <- seq(0, 20, 0.1)
-  cva6 <- summarise_antibody_curve_uncertainty("results/CVA6/CVA6_model2_seroreversion_rho.rds",
-                                               time_range, 1000) %>% mutate(virus = "CVA6")
-  eva71 <- summarise_antibody_curve_uncertainty("results/EVA71/EVA71_model2_seroreversion_rho.rds",
-                                                time_range, 1000) %>% mutate(virus = "EV-A71")
-  both <- cva6 %>% bind_rows(eva71)
+  both_viruses_all <- function(filename_cva6, filename_eva71, age_range, 
+                               sero_function, n_mcmc_iterations, n_rbinom_iterations, 
+                               sample_size_cva6, sample_size_eva71) {
+    
+    cva6 <- summarise_age_curve_uncertainty_all(filename_cva6, age_range, 
+                                                sero_function, n_mcmc_iterations, n_rbinom_iterations,
+                                                sample_size_cva6) %>% 
+      mutate(virus = "CVA6")
+    
+    eva71 <- summarise_age_curve_uncertainty_all(filename_eva71, age_range, 
+                                                 sero_function, n_mcmc_iterations, n_rbinom_iterations,
+                                                 sample_size_eva71) %>% 
+      mutate(virus = "EV-A71")
+    
+    both <- cva6 %>% bind_rows(eva71)
+    both
+  }
   
-  g2 <- both %>% 
-    ggplot(aes(x = time, y = middle)) +
-    geom_ribbon(aes(ymin = lower, ymax = upper, fill = virus), alpha = 0.5) +
-    geom_line(aes(colour = virus)) +
-    scale_colour_manual(values = c("#D95F02", "#1B9E77"), name = "") +
-    scale_fill_manual(values = c("#D95F02", "#1B9E77"), name = "") +
-    labs(x = "Time since infection, years", y = "Probability (detectable antibodies)", title = "(B)") +
+  n_cva6 <- round(median(df_cva6$n))
+  n_eva71 <- round(median(df_eva71$n))
+  n_mcmc <- 1000
+  n_rbinom <- 10000
+  df_2 <- both_viruses_all("results/CVA6/CVA6_model2_lambda_rho.rds",
+                           "results/EVA71/EVA71_model2_lambda_rho.rds",
+                           age_range, sero_function_seroreversion, n_mcmc, n_rbinom, n_cva6, n_eva71)
+  
+  df_5 <- both_viruses_all("results/CVA6/CVA6_model5_lambda_beta.rds",
+                           "results/EVA71/EVA71_model5_lambda_beta.rds",
+                           age_range, sero_function_age, n_mcmc, n_rbinom, n_cva6, n_eva71)
+  
+  df_both <- df_2 %>% mutate(model = "Age-constant FOI & Seroreversion") %>% 
+    bind_rows(df_5 %>% mutate(model = "Age-dependent FOI & no seroreversion")) %>% 
+    mutate(type = "simulated") %>% mutate(virus = as.factor(virus)) %>% 
+    mutate(virus = fct_rev(virus))
+  
+  #########
+  
+  df_real <- df_real %>% mutate(virus = as.factor(virus)) %>% mutate(virus = fct_rev(virus))
+  
+  g <- ggplot(df_both, aes(x = age, y = middle)) +
+    geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.5) +
+    geom_line() +
+    geom_pointrange(data = df_real, aes(ymin = lower, ymax = upper, colour = as.factor(year))) +
+    scale_color_brewer("Year", palette = "Dark2") +
+    labs(x = "Age, years", y = "Seropositivity") +
+    scale_y_continuous(labels = scales::percent) +
     theme_bw() +
-    theme(axis.text = element_text(size = 9),
-          plot.title = element_text(face = 'bold', size = 14),
-          axis.title = element_text(size = 11),
-          legend.position = c(0.8, 0.8))
+    theme(axis.title = element_text(size = 11),
+          axis.text = element_text(size = 9),
+          panel.grid = element_blank(),
+          plot.title = element_text(size = 14, face = "bold"),
+          strip.text = element_text(size = 10),
+          legend.position = "bottom") +
+    facet_grid(vars(virus), vars(model))
   
-  fig5 <- (g1 | g2)
-  ggsave("figures/Figure5.pdf", fig5, height = 90, width = 183, units = 'mm', dpi = 300)
+  ggsave("figures/Figure5.pdf", g, height = 150, width = 183, units = 'mm', dpi = 300)
   
 }

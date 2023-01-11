@@ -151,10 +151,10 @@ plot_fig1_figS7 <- function() {
           legend.text = element_text(size = 10),
           legend.position = "bottom")
   
-  fig1 <- (A | B) / (C | D) / (E | F)
+  fig1 <- (A | B) / (C | D) 
   ggsave(filename = 'figures/Figure1.pdf', fig1, height = 183, width = 183, units = 'mm', dpi = 300)
   
-  figS7 <- (G | H)
-  ggsave(filename = 'figures/FigureS7.pdf', fig1, height = 183, width = 183, units = 'mm', dpi = 300)
+  figS7 <- (E | F) / (G | H)
+  ggsave(filename = 'figures/FigureS7.pdf', figS7, height = 183, width = 183, units = 'mm', dpi = 300)
   
 }
